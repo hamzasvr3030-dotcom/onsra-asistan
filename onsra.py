@@ -11,8 +11,7 @@ from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, TPE1
 from PIL import Image
 import qrcode
-from pyzbar.pyzbar import decode
-from pdf2image import convert_from_path
+# SORUNLU KÜTÜPHANELER KALDIRILDI (pyzbar ve pdf2image)
 
 TOKEN = "8774038631:AAFvx1Su_tjdc7cIO35y4oGf1c-B5AY2wpM"
 BOT_NAME = "Onsra Evrensel Asistan"
@@ -24,8 +23,7 @@ def main_menu_keyboard():
         [InlineKeyboardButton("🎵 Şarkı Ara (İsimle)", callback_data="mode_name")],
         [InlineKeyboardButton("🔗 Link ile İndir", callback_data="mode_link")],
         [InlineKeyboardButton("📄 Fotoğraftan PDF Yap", callback_data="mode_pdf")],
-        [InlineKeyboardButton("🖼️ PDF'den Görsel Yap", callback_data="mode_pdf_to_img")],
-        [InlineKeyboardButton("🔳 QR Kod Oluştur/Oku", callback_data="mode_qr")],
+        [InlineKeyboardButton("🔳 QR Kod Oluştur", callback_data="mode_qr")], # OKUMA MODU KALDIRILDI
         [InlineKeyboardButton("👑 Destek & İletişim", url=SUPPORT_URL)]
     ])
 
@@ -73,13 +71,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['waiting_for'] = 'pdf_name_input'
         await query.edit_message_text("PDF dosyasının ismini yazın:", reply_markup=back_home_keyboard())
     
-    elif data == "mode_pdf_to_img":
-        context.user_data['waiting_for'] = 'pdf_file'
-        await query.edit_message_text("Lütfen PDF dosyasını gönderin:", reply_markup=back_home_keyboard())
-    
     elif data == "mode_qr":
         context.user_data['waiting_for'] = 'qr_input'
-        await query.edit_message_text("QR Modu: Metin yazın veya QR fotoğrafı atın.", reply_markup=back_home_keyboard())
+        await query.edit_message_text("QR Modu: QR kodunu oluşturmak istediğiniz metni yazın.", reply_markup=back_home_keyboard())
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     waiting_for = context.user_data.get('waiting_for')
@@ -117,37 +111,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("✅ PDF'i Oluştur", callback_data="pdf_ask_name")],
                     [InlineKeyboardButton("🏠 Ana Menü", callback_data="main_menu")]]
         await update.message.reply_text(f"{len(context.user_data['pdf_images'])}. fotoğraf eklendi.", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif waiting_for == 'qr_input':
-        status = await update.message.reply_text("QR taranıyor...")
-        try:
-            file = await update.message.photo[-1].get_file()
-            img_bytes = await file.download_as_bytearray()
-            img = Image.open(io.BytesIO(img_bytes))
-            decoded = decode(img)
-            if decoded:
-                res = decoded[0].data.decode('utf-8')
-                await status.edit_text(f"QR Okundu: {res}", reply_markup=main_menu_keyboard())
-            else:
-                await status.edit_text("QR bulunamadı. Lütfen net bir fotoğraf atın.", reply_markup=back_home_keyboard())
-        except Exception as e:
-            await status.edit_text(f"Hata: {e}", reply_markup=main_menu_keyboard())
-
-async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get('waiting_for') == 'pdf_file' and update.message.document.mime_type == 'application/pdf':
-        status = await update.message.reply_text("Sayfalar dönüştürülüyor...")
-        pdf_file = await update.message.document.get_file()
-        pdf_path = f"temp_{update.effective_chat.id}.pdf"
-        await pdf_file.download_to_drive(pdf_path)
-        try:
-            images = convert_from_path(pdf_path)
-            for i, image in enumerate(images):
-                buf = io.BytesIO(); image.save(buf, format='JPEG'); buf.seek(0)
-                await context.bot.send_photo(chat_id=update.effective_chat.id, photo=buf, caption=f"Sayfa {i+1}")
-            await update.message.reply_text("Dönüşüm tamamlandı.", reply_markup=main_menu_keyboard())
-        finally:
-            if os.path.exists(pdf_path): os.remove(pdf_path)
-            context.user_data.clear()
 
 async def create_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE, custom_name):
     images = context.user_data.get('pdf_images', [])
@@ -208,15 +171,32 @@ async def download_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
 
 def main():
+    # RENDER İÇİN KÜÇÜK BİR PORT DİNLEYİCİ EKLEYELİM (Health Check)
+    import threading
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"Bot is alive!")
+
+    def run_health_server():
+        port = int(os.environ.get("PORT", 8080))
+        httpd = HTTPServer(('0.0.0.0', port), HealthHandler)
+        httpd.serve_forever()
+
+    threading.Thread(target=run_health_server, daemon=True).start()
+
     app = Application.builder().token(TOKEN).connect_timeout(60).read_timeout(60).write_timeout(300).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler, pattern="^(mode_|main_menu|pdf_ask_name)"))
     app.add_handler(CallbackQueryHandler(download_choice, pattern="^(mp3|mp4)$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.Document.PDF, handle_document))
+    # PDF'DEN GÖRSEL YAPMA HANDLER'I KALDIRILDI
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
     main()
-
+    
