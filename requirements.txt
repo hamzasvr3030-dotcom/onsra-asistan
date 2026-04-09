@@ -1,7 +1,5 @@
-python-telegram-bot
+Python-telegram-bot
 yt-dlp
 mutagen
 pillow
-pyzbar
 qrcode
-pdf2image
